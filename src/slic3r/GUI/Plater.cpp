@@ -4388,6 +4388,8 @@ void Plater::increase_instances(size_t num)
 
     p->selection_changed();
 
+    sidebar().obj_list()->selection_changed();
+
     this->p->schedule_background_process();
 }
 
@@ -4415,6 +4417,9 @@ void Plater::decrease_instances(size_t num)
         p->get_selection().add_instance(obj_idx, (int)model_object->instances.size() - 1);
 
     p->selection_changed();
+
+    sidebar().obj_list()->selection_changed();
+
     this->p->schedule_background_process();
 }
 
