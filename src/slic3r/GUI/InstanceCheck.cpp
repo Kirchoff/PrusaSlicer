@@ -26,9 +26,9 @@ namespace instance_check_internal
 		if (argc < 2)
 			return ret;
 		ret.cl_string = argv[0];
-		for (size_t i = 1; i < argc; i++) {
-			std::string token = argv[i];
-			if (token == "--single-instance") {
+		for (size_t i = 1; i < argc; ++i) {
+			const std::string token = argv[i];
+			if (token == "--single-instance" || token == "--single-instance=1") {
 				ret.should_send = true;
 			} else {
 				ret.cl_string += " ";
@@ -38,12 +38,9 @@ namespace instance_check_internal
 		BOOST_LOG_TRIVIAL(debug) << "single instance: "<< ret.should_send << ". other params: " << ret.cl_string;
 		return ret;
 	}
-} //namespace instance_check_internal
 
 #if _WIN32
 
-namespace instance_check_internal
-{
 	static HWND l_prusa_slicer_hwnd;
 	static BOOL CALLBACK EnumWindowsProc(_In_ HWND   hwnd, _In_ LPARAM lParam)
 	{
@@ -64,41 +61,27 @@ namespace instance_check_internal
 		}
 		return true;
 	}
-	static void send_message(const HWND hwnd)
+	static bool send_message(const std::string& message, bool app_config_single_instance)
 	{
-		LPWSTR command_line_args = GetCommandLine();
-		//Create a COPYDATASTRUCT to send the information
-		//cbData represents the size of the information we want to send.
-		//lpData represents the information we want to send.
-		//dwData is an ID defined by us(this is a type of ID different than WM_COPYDATA).
-		COPYDATASTRUCT data_to_send = { 0 };
-		data_to_send.dwData = 1;
-		data_to_send.cbData = sizeof(TCHAR) * (wcslen(command_line_args) + 1);
-		data_to_send.lpData = command_line_args;
+		if (!EnumWindows(EnumWindowsProc, 0)) {
+			LPWSTR command_line_args = GetCommandLine();
+			//Create a COPYDATASTRUCT to send the information
+			//cbData represents the size of the information we want to send.
+			//lpData represents the information we want to send.
+			//dwData is an ID defined by us(this is a type of ID different than WM_COPYDATA).
+			COPYDATASTRUCT data_to_send = { 0 };
+			data_to_send.dwData = 1;
+			data_to_send.cbData = sizeof(TCHAR) * (wcslen(command_line_args) + 1);
+			data_to_send.lpData = command_line_args;
 
-		SendMessage(hwnd, WM_COPYDATA, 0, (LPARAM)&data_to_send);
-	}
-} //namespace instance_check_internal
-
-bool instance_check(int argc, char** argv, bool app_config_single_instance)
-{
-	instance_check_internal::CommandLineAnalysis cla = instance_check_internal::process_command_line(argc, argv);
-	if (cla.should_send || app_config_single_instance) {
-		// Call EnumWidnows with own callback. cons: Based on text in the name of the window and class name which is generic.
-		if (!EnumWindows(instance_check_internal::EnumWindowsProc, 0)) {
-			BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
-			instance_check_internal::send_message(instance_check_internal::l_prusa_slicer_hwnd);
+			SendMessage(l_prusa_slicer_hwnd, WM_COPYDATA, 0, (LPARAM)&data_to_send);
 			return true;
 		}
+	    return false;
 	}
-	BOOST_LOG_TRIVIAL(info) << "instance check: Another instance not found or single-instance not set.";
-	return false;
-}
 
 #elif defined(__APPLE__)
 
-namespace instance_check_internal
-{
 	static int get_lock() 
 	{
 		struct flock fl;
@@ -116,24 +99,17 @@ namespace instance_check_internal
 
 		return 1;
 	}
-} //namespace instance_check_internal
-
-bool instance_check(int argc, char** argv, bool app_config_single_instance)
-{
-	instance_check_internal::CommandLineAnalysis cla = instance_check_internal::process_command_line(argc, argv);
-	if (!instance_check_internal::get_lock() && (cla.should_send || app_config_single_instance)) {
-		BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
-		send_message_mac(cla.cl_string);
-		return true;
+	static bool send_message(const std::string &message_text, bool app_config_single_instance)
+	{
+		if (app_config_single_instance)) {
+			send_message_mac(message_text);
+			return true;
+		}
+		return false;
 	}
-	BOOST_LOG_TRIVIAL(info) << "instance check: Another instance not found or single-instance not set.";
-	return false;
-}
 
 #elif defined(__linux__)
 
-namespace instance_check_internal
-{
 	static int get_lock() 
 	{
 		struct flock fl;
@@ -152,86 +128,90 @@ namespace instance_check_internal
 		return 1;
 	}
 
-	static void send_message(std::string message_text)
+	static bool  send_message(const std::string &message_text, bool app_config_single_instance)
 	{
-		DBusMessage* 	msg;
-	    DBusMessageIter args;
-	    DBusConnection* conn;
-	    DBusError 		err;
-	    dbus_uint32_t 	serial 			= 0;
-	    const char*		sigval 			= message_text.c_str();
-		std::string		interface_name  = "com.prusa3d.prusaslicer.InstanceCheck";
-		std::string   	method_name 	= "AnotherInstace";
-    	std::string		object_name 	= "/com/prusa3d/prusaslicer/InstanceCheck";				
+		if (!instance_check_internal::get_lock())
+		{
+			DBusMessage* msg;
+			DBusMessageIter args;
+			DBusConnection* conn;
+			DBusError 		err;
+			dbus_uint32_t 	serial = 0;
+			const char* sigval = message_text.c_str();
+			std::string		interface_name = "com.prusa3d.prusaslicer.InstanceCheck";
+			std::string   	method_name = "AnotherInstace";
+			std::string		object_name = "/com/prusa3d/prusaslicer/InstanceCheck";
 
 
-	    // initialise the error value
-	    dbus_error_init(&err);
+			// initialise the error value
+			dbus_error_init(&err);
 
-	    // connect to bus, and check for errors (use SESSION bus everywhere!)
-	    conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
-	    if (dbus_error_is_set(&err)) { 
-	    	BOOST_LOG_TRIVIAL(error) << "DBus Connection Error. Message to another instance wont be send.";
-	    	BOOST_LOG_TRIVIAL(error) << "DBus Connection Error: "<< err.message;
-	        dbus_error_free(&err); 
-	        return;
-	    }
-	    if (NULL == conn) { 
-	    	BOOST_LOG_TRIVIAL(error) << "DBus Connection is NULL. Message to another instance wont be send.";
-	        return;
-	    }	    
+			// connect to bus, and check for errors (use SESSION bus everywhere!)
+			conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
+			if (dbus_error_is_set(&err)) {
+				BOOST_LOG_TRIVIAL(error) << "DBus Connection Error. Message to another instance wont be send.";
+				BOOST_LOG_TRIVIAL(error) << "DBus Connection Error: " << err.message;
+				dbus_error_free(&err);
+				return true;
+			}
+			if (NULL == conn) {
+				BOOST_LOG_TRIVIAL(error) << "DBus Connection is NULL. Message to another instance wont be send.";
+				return true;
+			}
 
-		//some sources do request interface ownership before constructing msg but i think its wrong.
+			//some sources do request interface ownership before constructing msg but i think its wrong.
 
-	    //create new method call message
-		msg = dbus_message_new_method_call(interface_name.c_str(), object_name.c_str(), interface_name.c_str(), method_name.c_str());
-	    if (NULL == msg) { 
-	    	BOOST_LOG_TRIVIAL(error) << "DBus Message is NULL. Message to another instance wont be send.";
-	    	dbus_connection_unref(conn);
-	        return;
-	    }
-	    //the AnotherInstace method is not sending reply.
-	    dbus_message_set_no_reply(msg, TRUE);
+			//create new method call message
+			msg = dbus_message_new_method_call(interface_name.c_str(), object_name.c_str(), interface_name.c_str(), method_name.c_str());
+			if (NULL == msg) {
+				BOOST_LOG_TRIVIAL(error) << "DBus Message is NULL. Message to another instance wont be send.";
+				dbus_connection_unref(conn);
+				return true;
+			}
+			//the AnotherInstace method is not sending reply.
+			dbus_message_set_no_reply(msg, TRUE);
 
-	    //append arguments to message
-		if (!dbus_message_append_args(msg, DBUS_TYPE_STRING, &sigval, DBUS_TYPE_INVALID)) {
-			BOOST_LOG_TRIVIAL(error) << "Ran out of memory while constructing args for DBus message. Message to another instance wont be send.";
-		    dbus_message_unref(msg);
-		    dbus_connection_unref(conn);
-		    return;
+			//append arguments to message
+			if (!dbus_message_append_args(msg, DBUS_TYPE_STRING, &sigval, DBUS_TYPE_INVALID)) {
+				BOOST_LOG_TRIVIAL(error) << "Ran out of memory while constructing args for DBus message. Message to another instance wont be send.";
+				dbus_message_unref(msg);
+				dbus_connection_unref(conn);
+				return true;
+			}
+
+			// send the message and flush the connection
+			if (!dbus_connection_send(conn, msg, &serial)) {
+				BOOST_LOG_TRIVIAL(error) << "Ran out of memory while sending DBus message.";
+				dbus_message_unref(msg);
+				dbus_connection_unref(conn);
+				return true;
+			}
+			dbus_connection_flush(conn);
+
+			BOOST_LOG_TRIVIAL(trace) << "DBus message sent.";
+
+			// free the message and close the connection
+			dbus_message_unref(msg);
+			dbus_connection_unref(conn);
+			return true;
 		}
-
-	    // send the message and flush the connection
-	    if (!dbus_connection_send(conn, msg, &serial)) {
-	        BOOST_LOG_TRIVIAL(error) << "Ran out of memory while sending DBus message.";
-	        dbus_message_unref(msg);
-	        dbus_connection_unref(conn);
-	        return;
-	    }
-	    dbus_connection_flush(conn);
-	   
-		BOOST_LOG_TRIVIAL(trace) << "DBus message sent.";
-	   
-	    // free the message and close the connection
-	    dbus_message_unref(msg);
-	    dbus_connection_unref(conn);
+		return false;
 	}
+
+#endif //_WIN32/__APPLE__/__linux__
 } //namespace instance_check_internal
 
 bool instance_check(int argc, char** argv, bool app_config_single_instance)
 {
 	instance_check_internal::CommandLineAnalysis cla = instance_check_internal::process_command_line(argc, argv);
-	if (!instance_check_internal::get_lock() && (cla.should_send || app_config_single_instance)) {
-		BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
-		instance_check_internal::send_message(cla.cl_string);
-		return true;
-	}
+	if (cla.should_send || app_config_single_instance)
+		if (instance_check_internal::send_message(cla.cl_string, app_config_single_instance)) {
+			BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
+			return true;
+		}
 	BOOST_LOG_TRIVIAL(info) << "instance check: Another instance not found or single-instance not set.";
 	return false;
 }
-#endif //_WIN32/__APPLE__/__linux__
-
-
 
 namespace GUI {
 
@@ -290,9 +270,11 @@ void OtherInstanceMessageHandler::shutdown()
 namespace MessageHandlerInternal
 {
    // returns ::path to possible model or empty ::path if input string is not existing path
-	static boost::filesystem::path get_path(const std::string possible_path)
+	static boost::filesystem::path get_path(std::string possible_path)
 	{
 		BOOST_LOG_TRIVIAL(debug) << "message part: " << possible_path;
+
+		possible_path.erase(std::remove_if(possible_path.begin(), possible_path.end(), isspace), possible_path.end());
 
 		if (possible_path.empty() || possible_path.size() < 3) {
 			BOOST_LOG_TRIVIAL(debug) << "empty";
@@ -312,7 +294,7 @@ namespace MessageHandlerInternal
 	}
 } //namespace MessageHandlerInternal
 
-void OtherInstanceMessageHandler::handle_message(const std::string message) {
+void OtherInstanceMessageHandler::handle_message(const std::string& message) {
 	std::vector<boost::filesystem::path> paths;
 	auto                                 next_space = message.find(' ');
 	size_t                               last_space = 0;
@@ -323,8 +305,8 @@ void OtherInstanceMessageHandler::handle_message(const std::string message) {
 	while (next_space != std::string::npos)
 	{	
 		if (counter != 0) {
-			const std::string possible_path = message.substr(last_space, next_space - last_space);
-			boost::filesystem::path p = MessageHandlerInternal::get_path(possible_path);
+			std::string possible_path = message.substr(last_space, next_space - last_space);
+			boost::filesystem::path p = MessageHandlerInternal::get_path(std::move(possible_path));
 			if(!p.string().empty())
 				paths.emplace_back(p);
 		}

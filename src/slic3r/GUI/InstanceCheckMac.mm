@@ -11,7 +11,7 @@
 }
 -(void)add_observer
 {
-	NSLog(@"adding observer");
+	//NSLog(@"adding observer");
 	[[NSDistributedNotificationCenter defaultCenter] addObserver:self selector:@selector(message_update:) name:@"OtherPrusaSlicerInstanceMessage" object:nil suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
 }
 
@@ -36,7 +36,7 @@
 
 namespace Slic3r {
 
-void send_message_mac(const std::string msg)
+void send_message_mac(const std::string &msg)
 {
 	NSString *nsmsg = [NSString stringWithCString:msg.c_str() encoding:[NSString defaultCStringEncoding]];
 	//NSLog(@"sending msg %@", nsmsg);

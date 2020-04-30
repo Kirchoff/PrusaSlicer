@@ -11,10 +11,11 @@
 
 #include <boost/filesystem.hpp>
 
+#if __linux__
 #include <boost/thread.hpp>
 #include <tbb/mutex.h>
 #include <condition_variable>
-
+#endif // __linux__
 
 
 namespace Slic3r {
@@ -26,7 +27,7 @@ bool    instance_check(int argc, char** argv, bool app_config_single_instance);
 #if __APPLE__
 // apple implementation of inner functions of instance_check
 // in InstanceCheckMac.mm
-void    send_message_mac(const std::string msg);
+void    send_message_mac(const std::string& msg);
 #endif //__APPLE__
 
 namespace GUI {
@@ -60,7 +61,7 @@ public:
 	//						win32 - anybody who has hwnd can send message.
 	//						mac - anybody who posts notification with name:@"OtherPrusaSlicerTerminating"
 	//						linux - instrospectable on dbus
-	void    handle_message(const std::string message);
+	void    handle_message(const std::string& message);
 private:
 	bool                    m_initialized { false };
 	wxEvtHandler*           m_callback_evt_handler { nullptr };
