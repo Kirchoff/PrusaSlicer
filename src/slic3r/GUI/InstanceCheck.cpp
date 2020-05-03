@@ -1,6 +1,8 @@
 #include "GUI_App.hpp"
 #include "InstanceCheck.hpp"
 
+#include "libslic3r/Utils.hpp"
+
 #include "boost/nowide/convert.hpp"
 #include <boost/log/trivial.hpp>
 #include <iostream>
@@ -61,7 +63,7 @@ namespace instance_check_internal
 		}
 		return true;
 	}
-	static bool send_message(const std::string& message, bool app_config_single_instance)
+	static bool send_message(const std::string& message)
 	{
 		if (!EnumWindows(EnumWindowsProc, 0)) {
 			LPWSTR command_line_args = GetCommandLine();
@@ -82,26 +84,27 @@ namespace instance_check_internal
 
 #elif defined(__APPLE__)
 
-	static int get_lock() 
+	static bool get_lock() 
 	{
-		struct flock fl;
-		int fdlock;
+		std::string dest_dir = data_dir();
+		struct      flock fl;
+		int         fdlock;
 		fl.l_type = F_WRLCK;
 		fl.l_whence = SEEK_SET;
 		fl.l_start = 0;
 		fl.l_len = 1;
-
-		if ((fdlock = open("/tmp/prusaslicer.lock", O_WRONLY | O_CREAT, 0666)) == -1)
-			return 0;
+		dest_dir += "/prusaslicer.lock";
+		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
+			return false;
 
 		if (fcntl(fdlock, F_SETLK, &fl) == -1)
-			return 0;
+			return false;
 
-		return 1;
+		return true;
 	}
-	static bool send_message(const std::string &message_text, bool app_config_single_instance)
+	static bool send_message(const std::string &message_text)
 	{
-		if (app_config_single_instance)) {
+		if (!instance_check_internal::get_lock()) {
 			send_message_mac(message_text);
 			return true;
 		}
@@ -112,23 +115,29 @@ namespace instance_check_internal
 
 	static int get_lock() 
 	{
-		struct flock fl;
-		int fdlock;
+		std::string dest_dir = data_dir();
+		struct      flock fl;
+		int         fdlock;
 		fl.l_type = F_WRLCK;
 		fl.l_whence = SEEK_SET;
 		fl.l_start = 0;
 		fl.l_len = 1;
-
-		if ((fdlock = open("/tmp/prusaslicer.lock", O_WRONLY | O_CREAT, 0666)) == -1)
-			return 0;
+		dest_dir += "/prusaslicer.lock";
+		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
+			return false;
 
 		if (fcntl(fdlock, F_SETLK, &fl) == -1)
-			return 0;
-
-		return 1;
+			return false;
+/*
+		std::ofstream myfile;
+		myfile.open(dest_dir);
+		myfile << "Writing this to a file.\n";
+		myfile.close();
+*/		
+		return true;
 	}
 
-	static bool  send_message(const std::string &message_text, bool app_config_single_instance)
+	static bool  send_message(const std::string &message_text)
 	{
 		if (!instance_check_internal::get_lock())
 		{
@@ -204,8 +213,9 @@ namespace instance_check_internal
 bool instance_check(int argc, char** argv, bool app_config_single_instance)
 {
 	instance_check_internal::CommandLineAnalysis cla = instance_check_internal::process_command_line(argc, argv);
+	std::cout<<cla.cl_string<<std::endl;
 	if (cla.should_send || app_config_single_instance)
-		if (instance_check_internal::send_message(cla.cl_string, app_config_single_instance)) {
+		if (instance_check_internal::send_message(cla.cl_string)) {
 			BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
 			return true;
 		}
