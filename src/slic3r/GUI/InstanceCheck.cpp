@@ -67,7 +67,7 @@ namespace instance_check_internal
 	static bool send_message(const std::string& message, const std::string &version)
 	{
 		if (!EnumWindows(EnumWindowsProc, 0)) {
-			LPWSTR command_line_args = boost::nowide::widen(message);//GetCommandLine();
+			LPWSTR command_line_args = boost::nowide::widen(message).c_str();//GetCommandLine();
 			//Create a COPYDATASTRUCT to send the information
 			//cbData represents the size of the information we want to send.
 			//lpData represents the information we want to send.
