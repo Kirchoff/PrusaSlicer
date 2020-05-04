@@ -35,10 +35,10 @@ namespace instance_check_internal
 			if (token == "--single-instance" || token == "--single-instance=1") {
 				ret.should_send = true;
 			} else {
-				ret.cl_string += " ";
+				ret.cl_string += " : ";
 				ret.cl_string += escape_string_cstyle(token);
 			}
-		}
+		} 
 		BOOST_LOG_TRIVIAL(debug) << "single instance: "<< ret.should_send << ". other params: " << ret.cl_string;
 		return ret;
 	}
@@ -68,7 +68,7 @@ namespace instance_check_internal
 	static bool send_message(const std::string& message)
 	{
 		if (!EnumWindows(EnumWindowsProc, 0)) {
-			LPWSTR command_line_args = GetCommandLine();
+			LPWSTR command_line_args = boost::nowide::widen(message);//GetCommandLine();
 			//Create a COPYDATASTRUCT to send the information
 			//cbData represents the size of the information we want to send.
 			//lpData represents the information we want to send.
@@ -307,7 +307,7 @@ namespace MessageHandlerInternal
 
 void OtherInstanceMessageHandler::handle_message(const std::string& message) {
 	std::vector<boost::filesystem::path> paths;
-	auto                                 next_space = message.find(' ');
+	auto                                 next_space = message.find(" : ");
 	size_t                               last_space = 0;
 	int                                  counter    = 0;
 
@@ -322,7 +322,7 @@ void OtherInstanceMessageHandler::handle_message(const std::string& message) {
 				paths.emplace_back(p);
 		}
 		last_space = next_space;
-		next_space = message.find(' ', last_space + 1);
+		next_space = message.find(" : ", last_space + 1);
 		counter++;
 	}
 	if (counter != 0 ) {
