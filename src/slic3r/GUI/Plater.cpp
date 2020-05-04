@@ -1963,7 +1963,7 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
 			else
 				wxGetApp().mainframe->Maximize(false);
 		}
-		//this code (without code above) maximize window on Ubuntu
+		//this code maximize window on Ubuntu
 		{
 			wxGetApp().mainframe->Restore();  
 			wxGetApp().GetTopWindow()->SetFocus();  // focus on my window

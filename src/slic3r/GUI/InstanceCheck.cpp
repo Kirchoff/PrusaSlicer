@@ -2,6 +2,7 @@
 #include "InstanceCheck.hpp"
 
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/Config.hpp"
 
 #include "boost/nowide/convert.hpp"
 #include <boost/log/trivial.hpp>
@@ -22,19 +23,20 @@ namespace instance_check_internal
 		bool           should_send;
 		std::string    cl_string;
 	};
-	static CommandLineAnalysis process_command_line(int argc, char** argv) //d:\3dmodels\Klapka\Klapka.3mf
+	static CommandLineAnalysis process_command_line(int argc, char** argv)
 	{
 		CommandLineAnalysis ret { false };
 		if (argc < 2)
 			return ret;
-		ret.cl_string = argv[0];
+		ret.cl_string = escape_string_cstyle(argv[0]);
 		for (size_t i = 1; i < argc; ++i) {
 			const std::string token = argv[i];
+			BOOST_LOG_TRIVIAL(error) << "token: " << token;
 			if (token == "--single-instance" || token == "--single-instance=1") {
 				ret.should_send = true;
 			} else {
 				ret.cl_string += " ";
-				ret.cl_string += token;
+				ret.cl_string += escape_string_cstyle(token);
 			}
 		}
 		BOOST_LOG_TRIVIAL(debug) << "single instance: "<< ret.should_send << ". other params: " << ret.cl_string;
@@ -213,7 +215,6 @@ namespace instance_check_internal
 bool instance_check(int argc, char** argv, bool app_config_single_instance)
 {
 	instance_check_internal::CommandLineAnalysis cla = instance_check_internal::process_command_line(argc, argv);
-	std::cout<<cla.cl_string<<std::endl;
 	if (cla.should_send || app_config_single_instance)
 		if (instance_check_internal::send_message(cla.cl_string)) {
 			BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
