@@ -31,7 +31,6 @@ namespace instance_check_internal
 		ret.cl_string = escape_string_cstyle(argv[0]);
 		for (size_t i = 1; i < argc; ++i) {
 			const std::string token = argv[i];
-			BOOST_LOG_TRIVIAL(error) << "token: " << token;
 			if (token == "--single-instance" || token == "--single-instance=1") {
 				ret.should_send = true;
 			} else {
@@ -65,7 +64,7 @@ namespace instance_check_internal
 		}
 		return true;
 	}
-	static bool send_message(const std::string& message)
+	static bool send_message(const std::string& message, const std::string &version)
 	{
 		if (!EnumWindows(EnumWindowsProc, 0)) {
 			LPWSTR command_line_args = boost::nowide::widen(message);//GetCommandLine();
@@ -84,9 +83,8 @@ namespace instance_check_internal
 	    return false;
 	}
 
-#elif defined(__APPLE__)
-
-	static bool get_lock() 
+#else 
+	static int get_lock(const std::string &version) 
 	{
 		std::string dest_dir = data_dir();
 		struct      flock fl;
@@ -95,7 +93,7 @@ namespace instance_check_internal
 		fl.l_whence = SEEK_SET;
 		fl.l_start = 0;
 		fl.l_len = 1;
-		dest_dir += "/prusaslicer.lock";
+		dest_dir += "/cache/prusaslicer-" + version + ".lock";
 		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
 			return false;
 
@@ -104,9 +102,13 @@ namespace instance_check_internal
 
 		return true;
 	}
-	static bool send_message(const std::string &message_text)
+
+#endif //_WIN32
+#if defined(__APPLE__)
+
+	static bool send_message(const std::string &message_text, const std::string &version)
 	{
-		if (!instance_check_internal::get_lock()) {
+		if (!instance_check_internal::get_lock(version)) {
 			send_message_mac(message_text);
 			return true;
 		}
@@ -115,33 +117,9 @@ namespace instance_check_internal
 
 #elif defined(__linux__)
 
-	static int get_lock() 
+	static bool  send_message(const std::string &message_text, const std::string &version)
 	{
-		std::string dest_dir = data_dir();
-		struct      flock fl;
-		int         fdlock;
-		fl.l_type = F_WRLCK;
-		fl.l_whence = SEEK_SET;
-		fl.l_start = 0;
-		fl.l_len = 1;
-		dest_dir += "/prusaslicer.lock";
-		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
-			return false;
-
-		if (fcntl(fdlock, F_SETLK, &fl) == -1)
-			return false;
-/*
-		std::ofstream myfile;
-		myfile.open(dest_dir);
-		myfile << "Writing this to a file.\n";
-		myfile.close();
-*/		
-		return true;
-	}
-
-	static bool  send_message(const std::string &message_text)
-	{
-		if (!instance_check_internal::get_lock())
+		if (!instance_check_internal::get_lock(version))
 		{
 			DBusMessage* msg;
 			DBusMessageIter args;
@@ -209,14 +187,15 @@ namespace instance_check_internal
 		return false;
 	}
 
-#endif //_WIN32/__APPLE__/__linux__
+#endif //__APPLE__/__linux__
 } //namespace instance_check_internal
 
-bool instance_check(int argc, char** argv, bool app_config_single_instance)
+bool instance_check(int argc, char** argv, bool app_config_single_instance, std::string version)
 {
+	std::replace( version.begin(), version.end(), '.', '-');
 	instance_check_internal::CommandLineAnalysis cla = instance_check_internal::process_command_line(argc, argv);
 	if (cla.should_send || app_config_single_instance)
-		if (instance_check_internal::send_message(cla.cl_string)) {
+		if (instance_check_internal::send_message(cla.cl_string, version)) {
 			BOOST_LOG_TRIVIAL(info) << "instance check: Another instance found. This instance will terminate.";
 			return true;
 		}
@@ -283,9 +262,9 @@ namespace MessageHandlerInternal
    // returns ::path to possible model or empty ::path if input string is not existing path
 	static boost::filesystem::path get_path(std::string possible_path)
 	{
-		BOOST_LOG_TRIVIAL(debug) << "message part: " << possible_path;
+		BOOST_LOG_TRIVIAL(debug) << "message part:" << possible_path;
 
-		possible_path.erase(std::remove_if(possible_path.begin(), possible_path.end(), isspace), possible_path.end());
+		//possible_path.erase(std::remove_if(possible_path.begin(), possible_path.end(), isspace), possible_path.end());
 
 		if (possible_path.empty() || possible_path.size() < 3) {
 			BOOST_LOG_TRIVIAL(debug) << "empty";
@@ -321,12 +300,12 @@ void OtherInstanceMessageHandler::handle_message(const std::string& message) {
 			if(!p.string().empty())
 				paths.emplace_back(p);
 		}
-		last_space = next_space;
-		next_space = message.find(" : ", last_space + 1);
+		last_space = next_space + 3;
+		next_space = message.find(" : ", last_space);
 		counter++;
 	}
 	if (counter != 0 ) {
-		boost::filesystem::path p = MessageHandlerInternal::get_path(message.substr(last_space + 1));
+		boost::filesystem::path p = MessageHandlerInternal::get_path(message.substr(last_space));
 		if (!p.string().empty())
 			paths.emplace_back(p);
 	}

@@ -527,7 +527,7 @@ int CLI::run(int argc, char **argv)
         GUI::GUI_App *gui = new GUI::GUI_App();
 
 		bool gui_single_instance_setting = gui->app_config->get("single_instance") == "1";
-		if (Slic3r::instance_check(argc, argv, gui_single_instance_setting)) {
+		if (Slic3r::instance_check(argc, argv, gui_single_instance_setting, gui->app_config->orig_version().to_string())) {
 			//TODO: do we have delete gui and other stuff?
 			return -1;
 		}
