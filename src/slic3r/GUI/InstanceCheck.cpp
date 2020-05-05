@@ -42,6 +42,25 @@ namespace instance_check_internal
 		return ret;
 	}
 
+	static int get_lock(const std::string& version)
+	{
+		std::string dest_dir = data_dir();
+		struct      flock fl;
+		int         fdlock;
+		fl.l_type = F_WRLCK;
+		fl.l_whence = SEEK_SET;
+		fl.l_start = 0;
+		fl.l_len = 1;
+		dest_dir += "/cache/prusaslicer-" + version + ".lock";
+		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
+			return false;
+
+		if (fcntl(fdlock, F_SETLK, &fl) == -1)
+			return false;
+
+		return true;
+	}
+
 #if _WIN32
 
 	static HWND l_prusa_slicer_hwnd;
@@ -66,7 +85,7 @@ namespace instance_check_internal
 	}
 	static bool send_message(const std::string& message, const std::string &version)
 	{
-		if (!EnumWindows(EnumWindowsProc, 0)) {
+		if (!instance_check_internal::get_lock(version) && !EnumWindows(EnumWindowsProc, 0)) {
 			std::wstring wstr = boost::nowide::widen(message);
 			//LPWSTR command_line_args = wstr.c_str();//GetCommandLine();
 			LPWSTR command_line_args = new wchar_t[wstr.size() + 1];
@@ -88,24 +107,7 @@ namespace instance_check_internal
 	}
 
 #else 
-	static int get_lock(const std::string &version) 
-	{
-		std::string dest_dir = data_dir();
-		struct      flock fl;
-		int         fdlock;
-		fl.l_type = F_WRLCK;
-		fl.l_whence = SEEK_SET;
-		fl.l_start = 0;
-		fl.l_len = 1;
-		dest_dir += "/cache/prusaslicer-" + version + ".lock";
-		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
-			return false;
 
-		if (fcntl(fdlock, F_SETLK, &fl) == -1)
-			return false;
-
-		return true;
-	}
 
 #endif //_WIN32
 #if defined(__APPLE__)
