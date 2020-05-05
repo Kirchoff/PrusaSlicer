@@ -42,26 +42,21 @@ namespace instance_check_internal
 		return ret;
 	}
 
-	static int get_lock(const std::string& version)
-	{
-		std::string dest_dir = data_dir();
-		struct      flock fl;
-		int         fdlock;
-		fl.l_type = F_WRLCK;
-		fl.l_whence = SEEK_SET;
-		fl.l_start = 0;
-		fl.l_len = 1;
-		dest_dir += "/cache/prusaslicer-" + version + ".lock";
-		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
-			return false;
-
-		if (fcntl(fdlock, F_SETLK, &fl) == -1)
-			return false;
-
-		return true;
-	}
+	
 
 #if _WIN32
+
+	PROPENUMPROC Propenumproc;
+
+	BOOL Propenumproc(
+		HWND Arg1,
+		LPCSTR Arg2,
+		HANDLE Arg3
+	)
+	{
+		BOOST_LOG_TRIVIAL(error) << "propenum: " << Arg1;
+		return true;
+	}
 
 	static HWND l_prusa_slicer_hwnd;
 	static BOOL CALLBACK EnumWindowsProc(_In_ HWND   hwnd, _In_ LPARAM lParam)
@@ -77,6 +72,7 @@ namespace instance_check_internal
 		std::wstring wndTextString(wndText);
 		if (wndTextString.find(L"PrusaSlicer") != std::wstring::npos && classNameString == L"wxWindowNR") {
 			l_prusa_slicer_hwnd = hwnd;
+			EnumProps(hwnd, Propenumproc);
 			ShowWindow(hwnd, SW_SHOWMAXIMIZED);
 			SetForegroundWindow(hwnd);
 			return false;
@@ -101,13 +97,31 @@ namespace instance_check_internal
 			data_to_send.lpData = command_line_args;
 
 			SendMessage(l_prusa_slicer_hwnd, WM_COPYDATA, 0, (LPARAM)&data_to_send);
-			return true;
+			return true;  
 		}
 	    return false;
 	}
 
 #else 
 
+	static int get_lock(const std::string& version)
+	{
+		std::string dest_dir = data_dir();
+		struct      flock fl;
+		int         fdlock;
+		fl.l_type = F_WRLCK;
+		fl.l_whence = SEEK_SET;
+		fl.l_start = 0;
+		fl.l_len = 1;
+		dest_dir += "/cache/prusaslicer-" + version + ".lock";
+		if ((fdlock = open(dest_dir.c_str(), O_WRONLY | O_CREAT, 0666)) == -1)
+			return false;
+
+		if (fcntl(fdlock, F_SETLK, &fl) == -1)
+			return false;
+
+		return true;
+	}
 
 #endif //_WIN32
 #if defined(__APPLE__)
