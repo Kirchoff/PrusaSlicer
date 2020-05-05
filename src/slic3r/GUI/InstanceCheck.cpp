@@ -46,7 +46,7 @@ namespace instance_check_internal
 
 #if _WIN32
 
-	PROPENUMPROC Propenumproc;
+	//PROPENUMPROC Propenumproc;
 
 	BOOL Propenumproc(
 		HWND Arg1,
